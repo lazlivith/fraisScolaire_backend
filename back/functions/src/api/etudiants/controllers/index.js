@@ -347,6 +347,7 @@ class EtudiantController {
         classe_id,
         bourse_id,
         nationalite,
+        user_id,
       } = req.query;
       const pageNumber = parseInt(page);
       const limitNumber = parseInt(limit);
@@ -364,6 +365,10 @@ class EtudiantController {
 
       if (nationalite) {
         query = query.where("nationalite", "==", nationalite);
+      }
+
+      if (user_id) {
+        query = query.where("user_id", "==", user_id);
       }
 
       // Recherche par nom ou prénom
@@ -476,6 +481,10 @@ class EtudiantController {
         });
       }
 
+      // Vérifier les permissions
+      const userRole = req.user.role;
+      const userId = req.user.id;
+
       const etudiantDoc = await this.collection.doc(id).get();
 
       if (!etudiantDoc.exists) {
@@ -483,6 +492,17 @@ class EtudiantController {
           status: false,
           message: "Étudiant non trouvé",
         });
+      }
+
+      // Si c'est un étudiant, il ne peut accéder qu'à ses propres données
+      if (userRole === "etudiant") {
+        const etudiantData = etudiantDoc.data();
+        if (etudiantData.user_id !== userId) {
+          return res.status(403).json({
+            status: false,
+            message: "Accès refusé. Vous ne pouvez accéder qu'à vos propres données.",
+          });
+        }
       }
 
       const etudiantData = etudiantDoc.data();
@@ -526,17 +546,41 @@ class EtudiantController {
         }
       }
       if (etudiantData.parentId) {
-        etudiantData.parentId = decrypt(etudiantData.parentId);
-        try {
-          const parentDoc = await db
-            .collection("users")
-            .doc(etudiantData.parentId)
-            .get();
-          if (parentDoc.exists) {
-            parentInfo = { id: parentDoc.id, ...parentDoc.data() };
+        let parentIds = [];
+        
+        // Gérer les tableaux de parents
+        if (Array.isArray(etudiantData.parentId)) {
+          // Si c'est un tableau, déchiffrer tous les IDs
+          parentIds = etudiantData.parentId.map(id => decrypt(id));
+        } else {
+          // Si c'est une chaîne, la déchiffrer et créer un tableau
+          parentIds = [decrypt(etudiantData.parentId)];
+        }
+        
+        etudiantData.parentId = parentIds;
+        
+        // Récupérer les informations du premier parent (pour compatibilité)
+        if (parentIds.length > 0) {
+          try {
+            const parentDoc = await db
+              .collection("parents")
+              .doc(parentIds[0])
+              .get();
+            if (parentDoc.exists) {
+              const parentData = parentDoc.data();
+              // Déchiffrer les données sensibles du parent
+              parentInfo = { 
+                id: parentDoc.id, 
+                nom: parentData.nom,
+                prenom: parentData.prenom,
+                email: parentData.email ? decrypt(parentData.email) : null,
+                telephone: parentData.telephone ? decrypt(parentData.telephone) : null,
+                adresse: parentData.adresse ? decrypt(parentData.adresse) : null
+              };
+            }
+          } catch (error) {
+            console.error("Erreur lors de la récupération du parent:", error);
           }
-        } catch (_) {
-          // ignore parent fetch errors
         }
       }
 

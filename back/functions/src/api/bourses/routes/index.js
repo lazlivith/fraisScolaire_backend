@@ -391,6 +391,7 @@ router.get('/percentages', bourseController.getPercentages.bind(bourseController
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/:id', bourseController.getById.bind(bourseController));
+router.get('/:id/students', bourseController.getBourseStudents.bind(bourseController));
 router.put('/:id', bourseController.update.bind(bourseController));
 router.delete('/:id', bourseController.delete.bind(bourseController));
 

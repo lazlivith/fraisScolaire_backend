@@ -454,6 +454,66 @@ class BourseController {
       });
     }
   }
+
+  /**
+   * Récupérer les étudiants affectés à une bourse
+   * GET /bourses/:id/students
+   */
+  async getBourseStudents(req, res) {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({
+          status: false,
+          message: 'ID de la bourse requis',
+        });
+      }
+
+      // Vérifier que la bourse existe
+      const bourseDoc = await this.collection.doc(id).get();
+      if (!bourseDoc.exists) {
+        return res.status(404).json({
+          status: false,
+          message: 'Bourse non trouvée',
+        });
+      }
+
+      // Récupérer les étudiants qui ont cette bourse
+      const etudiantsSnapshot = await db.collection('etudiants')
+        .where('bourse_id', '==', id)
+        .get();
+
+      const students = etudiantsSnapshot.docs.map(doc => {
+        const studentData = doc.data();
+        return {
+          id: doc.id,
+          nom: studentData.nom,
+          prenom: studentData.prenom,
+          email: studentData.email,
+          telephone: studentData.telephone,
+          classe: studentData.classe,
+          status: studentData.status,
+          bourse_id: studentData.bourse_id,
+          createdAt: studentData.createdAt,
+          updatedAt: studentData.updatedAt
+        };
+      });
+
+      return res.status(200).json({
+        status: true,
+        data: students,
+        message: `${students.length} étudiant(s) trouvé(s) pour cette bourse`,
+      });
+    } catch (error) {
+      console.error('Erreur lors de la récupération des étudiants de la bourse:', error);
+      return res.status(500).json({
+        status: false,
+        message: 'Erreur lors de la récupération des étudiants de la bourse',
+        error: error.message,
+      });
+    }
+  }
 }
 
 module.exports = new BourseController();

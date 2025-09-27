@@ -11,7 +11,7 @@ class ParentController {
 
   async create(req, res) {
     try {
-      const { nom, prenom, email, telephone, adresse, password } = req.body;
+      const { nom, prenom, email, telephone, adresse, password, etudiant_id } = req.body;
 
       console.log("🔍 Données reçues pour création parent:", {
         nom: nom?.substring(0, 20) + "...",
@@ -112,6 +112,7 @@ class ParentController {
         nom: nom.trim(),
         prenom: prenom.trim(),
         userId: userDocRef.id, // Référence vers l'utilisateur
+        etudiant_id: etudiant_id || null, // ID de l'étudiant lié (optionnel)
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -154,6 +155,7 @@ class ParentController {
         prenom: parentData.prenom,
         email: parentData.email ? "encrypted" : "not provided",
         userId: parentData.userId,
+        etudiant_id: parentData.etudiant_id,
         hasTelephone: !!parentData.telephone,
         hasAdresse: !!parentData.adresse
       });
@@ -161,6 +163,51 @@ class ParentController {
       const parentDocRef = await this.collection.add(parentData);
       console.log("✅ Parent créé avec ID:", parentDocRef.id);
       const newParent = await parentDocRef.get();
+
+      // Si un étudiant est fourni, lier automatiquement
+      if (etudiant_id) {
+        console.log("🔗 Liaison automatique parent-étudiant...");
+        try {
+          // Vérifier que l'étudiant existe
+          const etudiantDoc = await db.collection("etudiants").doc(etudiant_id).get();
+          if (!etudiantDoc.exists) {
+            console.warn("⚠️ Étudiant non trouvé:", etudiant_id);
+          } else {
+            const etudiantData = etudiantDoc.data();
+            let parentIds = [];
+            
+            // Récupérer les IDs de parents existants
+            if (etudiantData.parentId) {
+              if (Array.isArray(etudiantData.parentId)) {
+                // Si c'est déjà un tableau, le déchiffrer
+                parentIds = etudiantData.parentId.map(id => decrypt(id));
+              } else {
+                // Si c'est une chaîne, la déchiffrer et créer un tableau
+                parentIds = [decrypt(etudiantData.parentId)];
+              }
+            }
+            
+            // Ajouter le nouveau parent s'il n'existe pas déjà
+            const newParentId = parentDocRef.id;
+            if (!parentIds.includes(newParentId)) {
+              parentIds.push(newParentId);
+            }
+            
+            // Chiffrer tous les IDs
+            const encryptedParentIds = parentIds.map(id => encrypt(id));
+            
+            // Mettre à jour l'étudiant avec le tableau d'IDs de parents
+            await db.collection("etudiants").doc(etudiant_id).update({
+              parentId: encryptedParentIds,
+              updatedAt: new Date()
+            });
+            console.log("✅ Étudiant lié au parent avec succès");
+          }
+        } catch (linkError) {
+          console.error("❌ Erreur lors de la liaison parent-étudiant:", linkError);
+          // Ne pas faire échouer la création du parent pour une erreur de liaison
+        }
+      }
 
       // Audit log pour le parent
       const auditLog = new AuditLog({
@@ -199,6 +246,8 @@ class ParentController {
           email: email.trim(),
           telephone: telephone ? telephone.trim() : null,
           adresse: adresse ? adresse.trim() : null,
+          etudiant_id: etudiant_id || null,
+          linked: !!etudiant_id
         } 
       });
     } catch (error) {
@@ -412,9 +461,31 @@ class ParentController {
         updatedAt: new Date()
       });
 
-      // Mettre à jour l'étudiant avec l'ID du parent
+      // Mettre à jour l'étudiant avec l'ID du parent (gestion des tableaux)
+      let parentIds = [];
+      
+      // Récupérer les IDs de parents existants
+      if (studentData.parentId) {
+        if (Array.isArray(studentData.parentId)) {
+          // Si c'est déjà un tableau, le déchiffrer
+          parentIds = studentData.parentId.map(parentId => decrypt(parentId));
+        } else {
+          // Si c'est une chaîne, la déchiffrer et créer un tableau
+          parentIds = [decrypt(studentData.parentId)];
+        }
+      }
+      
+      // Ajouter le nouveau parent s'il n'existe pas déjà
+      if (!parentIds.includes(id)) {
+        parentIds.push(id);
+      }
+      
+      // Chiffrer tous les IDs
+      const encryptedParentIds = parentIds.map(parentId => encrypt(parentId));
+      
+      // Mettre à jour l'étudiant avec le tableau d'IDs de parents
       await db.collection("etudiants").doc(studentId).update({
-        parentId: encrypt(id),
+        parentId: encryptedParentIds,
         updatedAt: new Date()
       });
 

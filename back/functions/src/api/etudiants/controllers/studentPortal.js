@@ -1,4 +1,5 @@
 const db = require("../../../config/firebase");
+const { decrypt } = require("../../../utils/encryption");
 
 class StudentPortalController {
   constructor() {
@@ -193,6 +194,22 @@ class StudentPortalController {
         statutPaiement = "En retard";
       }
 
+      // Déchiffrer les champs sensibles
+      let telephoneDecrypted = etudiantData.telephone;
+      let adresseDecrypted = etudiantData.adresse;
+      
+      try {
+        if (etudiantData.telephone) {
+          telephoneDecrypted = decrypt(etudiantData.telephone);
+        }
+        if (etudiantData.adresse) {
+          adresseDecrypted = decrypt(etudiantData.adresse);
+        }
+      } catch (decryptError) {
+        console.log("⚠️ Erreur lors du déchiffrement des données sensibles:", decryptError.message);
+        // Continuer avec les données chiffrées si le déchiffrement échoue
+      }
+
       // Préparer la réponse
       const dashboard = {
         etudiant: {
@@ -200,7 +217,8 @@ class StudentPortalController {
           nom: etudiantData.nom,
           prenom: etudiantData.prenom,
           email: etudiantData.email,
-          telephone: etudiantData.telephone,
+          telephone: telephoneDecrypted,
+          adresse: adresseDecrypted,
           classe: classeInfo,
           bourse: bourseInfo
         },
@@ -469,19 +487,24 @@ class StudentPortalController {
 
       // Si aucune facture trouvée, essayer avec l'ID standard
       if (facturesSnapshot.docs.length === 0) {
-        const stdId = `std-${etudiantData.prenom?.toLowerCase()}-${etudiantData.nom?.toLowerCase()}`;
-        console.log("🔍 Invoices - Essai avec ID standard:", stdId);
-        
-        try {
-          facturesSnapshot = await this.facturesCollection
-            .where("etudiant_id", "==", stdId)
-            .orderBy("date_emission", "desc")
-            .get();
-        } catch (orderByError) {
-          // Si orderBy échoue, essayer sans orderBy
-          facturesSnapshot = await this.facturesCollection
-            .where("etudiant_id", "==", stdId)
-            .get();
+        // Récupérer les données de l'étudiant pour construire l'ID standard
+        const etudiantDoc = await this.etudiantsCollection.doc(etudiantId).get();
+        if (etudiantDoc.exists) {
+          const etudiantData = etudiantDoc.data();
+          const stdId = `std-${etudiantData.prenom?.toLowerCase()}-${etudiantData.nom?.toLowerCase()}`;
+          console.log("🔍 Invoices - Essai avec ID standard:", stdId);
+          
+          try {
+            facturesSnapshot = await this.facturesCollection
+              .where("etudiant_id", "==", stdId)
+              .orderBy("date_emission", "desc")
+              .get();
+          } catch (orderByError) {
+            // Si orderBy échoue, essayer sans orderBy
+            facturesSnapshot = await this.facturesCollection
+              .where("etudiant_id", "==", stdId)
+              .get();
+          }
         }
       }
 

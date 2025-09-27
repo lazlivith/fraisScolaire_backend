@@ -9,9 +9,30 @@ class UsersController {
     this.collection = db.collection("users");
   }
 
+  // Vérifier si l'utilisateur peut gérer les sous-admin (seuls les admin peuvent le faire)
+  canManageSubAdmins(user) {
+    return user && user.role === "admin";
+  }
+
+  // Vérifier si l'utilisateur a des privilèges admin (admin ou sous-admin)
+  hasAdminPrivileges(user) {
+    return user && ["admin", "sous-admin"].includes(user.role);
+  }
+
   // Récupérer tous les utilisateurs
   async getAll(req, res) {
     try {
+      // Vérifier que l'utilisateur connecté peut voir les utilisateurs
+      if (
+        !req.user ||
+        !["admin", "sous-admin", "comptable"].includes(req.user.role)
+      ) {
+        return res.status(403).json({
+          message: "Non autorisé à voir les utilisateurs",
+          status: false,
+        });
+      }
+
       const { status, role } = req.query;
       let query = this.collection;
 
@@ -42,48 +63,55 @@ class UsersController {
     }
   }
 
-  // Récupérer les utilisateurs en attente d'affectation de rôle
+  // Récupérer les nouveaux utilisateurs créés récemment
   async getPendingUsers(req, res) {
     try {
-      // Vérifier que l'utilisateur connecté peut affecter des rôles
+      // Vérifier que l'utilisateur connecté peut voir les notifications
       if (
         !req.user ||
-        !["admin", "comptable"].includes(req.user.role)
+        !["admin", "sous-admin"].includes(req.user.role)
       ) {
         return res.status(403).json({
-          message: "Non autorisé à voir les utilisateurs en attente",
+          message: "Non autorisé à voir les notifications",
           status: false,
         });
       }
 
-      // Chercher les utilisateurs avec role: "user" et isActive: false
+      // Chercher les nouveaux utilisateurs créés dans les 7 derniers jours
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
       const snapshot = await this.collection
-        .where("role", "==", "user")
-        .where("isActive", "==", false)
+        .where("createdAt", ">=", sevenDaysAgo)
         .orderBy("createdAt", "desc")
+        .limit(20) // Limiter à 20 notifications récentes
         .get();
 
-      const allPendingDocs = snapshot.docs;
-
-      const pendingUsers = allPendingDocs.map((doc) => {
+      const newUsers = snapshot.docs.map((doc) => {
         const userData = doc.data();
         if (userData.telephone)
           userData.telephone = decrypt(userData.telephone);
         if (userData.adresse) userData.adresse = decrypt(userData.adresse);
         // Ne pas retourner le mot de passe
         delete userData.password;
-        return { id: doc.id, ...userData };
+        return { 
+          id: doc.id, 
+          ...userData,
+          type: 'new_user', // Type de notification
+          createdAt: userData.createdAt
+        };
       });
 
       return res.status(200).json({
         status: true,
-        data: pendingUsers,
-        message: `${pendingUsers.length} utilisateur(s) en attente d'affectation de rôle`,
+        data: newUsers,
+        message: `${newUsers.length} nouveau(x) utilisateur(s) créé(s)`,
       });
     } catch (error) {
+      console.error("Erreur lors de la récupération des nouveaux utilisateurs:", error);
       return res.status(500).json({
         status: false,
-        message: "Erreur lors de la récupération des utilisateurs en attente",
+        message: "Erreur lors de la récupération des nouveaux utilisateurs",
         error: error.message,
       });
     }
@@ -92,10 +120,10 @@ class UsersController {
   // Récupérer les users disponibles pour création de fiche étudiant
   async getAvailableUsersForStudent(req, res) {
     try {
-      // Seuls admin et sub-admin peuvent utiliser cette route
+      // Seuls admin, sous-admin et sub-admin peuvent utiliser cette route
       if (
         !req.user ||
-        (req.user.role !== "admin" && req.user.role !== "sub-admin")
+        !["admin", "sous-admin", "sub-admin"].includes(req.user.role)
       ) {
         return res.status(403).json({ status: false, message: "Non autorisé" });
       }
@@ -141,6 +169,17 @@ class UsersController {
   // Récupérer un utilisateur par ID
   async getById(req, res) {
     try {
+      // Vérifier que l'utilisateur connecté peut voir les utilisateurs
+      if (
+        !req.user ||
+        !["admin", "sous-admin", "comptable"].includes(req.user.role)
+      ) {
+        return res.status(403).json({
+          message: "Non autorisé à voir les utilisateurs",
+          status: false,
+        });
+      }
+
       const { id } = req.params;
       if (!id)
         return res.status(400).json({ status: false, message: "ID requis" });
@@ -191,6 +230,17 @@ class UsersController {
   // Créer un nouvel utilisateur
   async create(req, res) {
     try {
+      // Vérifier que l'utilisateur connecté peut créer des utilisateurs
+      if (
+        !req.user ||
+        !["admin", "sous-admin"].includes(req.user.role)
+      ) {
+        return res.status(403).json({
+          message: "Non autorisé à créer des utilisateurs",
+          status: false,
+        });
+      }
+
       const { email, nom, prenom, password, role, telephone, adresse } =
         req.body;
       if (!email || !nom || !password || !role)
@@ -301,6 +351,43 @@ class UsersController {
 
       await userRef.update(updateData);
       const updatedUser = await userRef.get();
+
+      // Si c'est un étudiant, synchroniser avec la table etudiants
+      if (updatedUser.data().role === 'etudiant') {
+        try {
+          // Rechercher l'étudiant correspondant par user_id
+          const etudiantsCollection = db.collection("etudiants");
+          const etudiantSnapshot = await etudiantsCollection
+            .where("user_id", "==", id)
+            .get();
+
+          if (!etudiantSnapshot.empty) {
+            const etudiantDoc = etudiantSnapshot.docs[0];
+            const etudiantData = etudiantDoc.data();
+            
+            // Préparer les données à synchroniser
+            const etudiantUpdateData = {
+              updatedAt: new Date()
+            };
+            
+            // Synchroniser les champs communs
+            if (nom !== undefined) etudiantUpdateData.nom = nom.trim();
+            if (prenom !== undefined) etudiantUpdateData.prenom = prenom.trim();
+            if (telephone !== undefined) etudiantUpdateData.telephone = encrypt(telephone.trim());
+            if (adresse !== undefined) etudiantUpdateData.adresse = encrypt(adresse.trim());
+            
+            // Mettre à jour l'étudiant
+            await etudiantDoc.ref.update(etudiantUpdateData);
+            
+            console.log(`✅ Synchronisation réussie: Utilisateur ${id} -> Étudiant ${etudiantDoc.id}`);
+          } else {
+            console.log(`⚠️ Aucun étudiant trouvé pour l'utilisateur ${id}`);
+          }
+        } catch (syncError) {
+          console.error("❌ Erreur lors de la synchronisation avec la table etudiants:", syncError);
+          // Ne pas faire échouer la requête principale, juste logger l'erreur
+        }
+      }
 
       // Audit log
       const auditLog = new AuditLog({
@@ -587,7 +674,7 @@ class UsersController {
       // Vérifier que l'utilisateur connecté peut approuver
       if (
         !req.user ||
-        !["admin", "comptable"].includes(req.user.role)
+        !["admin", "sous-admin", "comptable"].includes(req.user.role)
       ) {
         return res.status(403).json({
           status: false,
@@ -665,7 +752,7 @@ class UsersController {
       // Vérifier que l'utilisateur connecté peut rejeter
       if (
         !req.user ||
-        !["admin", "comptable"].includes(req.user.role)
+        !["admin", "sous-admin", "comptable"].includes(req.user.role)
       ) {
         return res.status(403).json({
           status: false,
@@ -714,7 +801,7 @@ class UsersController {
       const { oldPassword, newPassword } = req.body;
 
       // Vérifier que l'utilisateur connecté peut changer le mot de passe
-      if (!req.user || (req.user.id !== id && !["admin", "comptable"].includes(req.user.role))) {
+      if (!req.user || (req.user.id !== id && !["admin", "sous-admin", "comptable"].includes(req.user.role))) {
         return res.status(403).json({
           status: false,
           message: "Accès refusé. Vous ne pouvez changer que votre propre mot de passe.",
@@ -788,6 +875,15 @@ class UsersController {
         return res.status(401).json({
           status: false,
           message: "Authentification requise.",
+        });
+      }
+
+      // Autoriser admin, sous-admin et étudiants
+      const allowedRoles = ["admin", "sous-admin", "etudiant"];
+      if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({
+          status: false,
+          message: "Accès refusé. Rôle non autorisé.",
         });
       }
 

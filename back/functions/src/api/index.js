@@ -113,14 +113,14 @@ app.get("/diagnostic", async (req, res) => {
   }
 });
 
-app.use("/bourses", authenticate, authorize(["admin"]), boursesHandler);
-app.use("/classes", authenticate, authorize(["admin"]), classesHandler);
-app.use("/echeanciers", authenticate, authorize(["admin"]), echeanciersHandler);
-// Routes générales des étudiants - pour admin/sous-admin
+app.use("/bourses", authenticate, authorize(["admin", "sous-admin", "comptable"]), boursesHandler);
+app.use("/classes", authenticate, authorize(["admin", "sous-admin"]), classesHandler);
+app.use("/echeanciers", authenticate, authorize(["admin", "sous-admin"]), echeanciersHandler);
+// Routes générales des étudiants - pour admin/sous-admin et étudiants
 app.use(
   "/etudiants",
   authenticate,
-  authorize(["admin", "sous-admin"]),
+  authorize(["admin", "sous-admin", "etudiant"]),
   etudiantsHandler
 );
 
@@ -134,43 +134,43 @@ app.use(
 app.use(
   "/factures",
   authenticate,
-  authorize(["admin", "comptable", "etudiant", "parent"]),
+  authorize(["admin", "sous-admin", "comptable", "etudiant", "parent"]),
   facturesHandler
 );
 app.use(
   "/fraisPonctuels",
   authenticate,
-  authorize(["admin"]),
+  authorize(["admin", "sous-admin"]),
   fraisPonctuelsHandler
 );
 app.use(
   "/paiements",
   authenticate,
-  authorize(["admin", "comptable", "etudiant", "parent"]),
+  authorize(["admin", "sous-admin", "comptable", "etudiant", "parent"]),
   paiementsHandler
 );
-app.use("/activites", authenticate, authorize(["admin"]), activitesHandler);
-app.use("/relances", authenticate, authorize(["admin"]), relancesHandler);
+app.use("/activites", authenticate, authorize(["admin", "sous-admin"]), activitesHandler);
+app.use("/relances", authenticate, authorize(["admin", "sous-admin"]), relancesHandler);
 app.use(
   "/tarifs",
   authenticate,
-  authorize(["admin", "comptable"]),
+  authorize(["admin", "sous-admin", "comptable"]),
   tarifsHandler
 );
-app.use("/users", authenticate, authorize(["admin"]), usersHandler);
+app.use("/users", authenticate, authorize(["admin", "sous-admin", "etudiant"]), usersHandler);
 
 app.use("/auth", authHandler);
-app.use("/dashboard", authenticate, authorize(["admin"]), dashboardHandler);
+app.use("/dashboard", authenticate, authorize(["admin", "sous-admin"]), dashboardHandler);
 app.use(
   "/parents",
   authenticate,
   authorize(["admin", "sous-admin"]),
   parentsHandler
 );
-app.use("/upload", authenticate, authorize(["admin"]), uploadHandler);
-app.use("/webhooks", authenticate, authorize(["admin"]), webhooksHandler);
-app.use("/backup", authenticate, authorize(["admin"]), backupHandler);
-app.use("/payment-plans", authenticate, authorize(["admin"]), paymentPlansHandler);
+app.use("/upload", authenticate, authorize(["admin", "sous-admin"]), uploadHandler);
+app.use("/webhooks", authenticate, authorize(["admin", "sous-admin"]), webhooksHandler);
+app.use("/backup", authenticate, authorize(["admin", "sous-admin"]), backupHandler);
+app.use("/payment-plans", authenticate, authorize(["admin", "sous-admin"]), paymentPlansHandler);
 
 // Serve Swagger UI
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

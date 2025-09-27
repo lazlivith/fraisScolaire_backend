@@ -3,6 +3,7 @@ const db = require("../../../config/firebase");
 const jwt = require("jsonwebtoken"); // eslint-disable-line no-unused-vars
 const bcrypt = require("bcrypt");
 const AuditLog = require("../../../classes/AuditLog");
+const { decrypt } = require("../../../utils/encryption");
 // const sendEmail = require('../../../utils/sendmail'); // eslint-disable-line no-unused-vars
 
 class UserController {
@@ -311,19 +312,30 @@ class UserController {
       }
 
       const user = userDoc.data();
+      
+      // Déchiffrer les champs sensibles
+      if (user.telephone) user.telephone = decrypt(user.telephone);
+      if (user.adresse) user.adresse = decrypt(user.adresse);
 
       return res.status(200).json({
         status: true,
         message: "User data retrieved successfully",
-        user: {
+        data: {
           id: userDoc.id,
           email: user.email,
           nom: user.nom,
           prenom: user.prenom,
           role: user.role || "",
+          telephone: user.telephone || "",
+          adresse: user.adresse || "",
+          isActive: user.isActive,
+          emailNotifications: user.emailNotifications,
+          smsNotifications: user.smsNotifications,
           status: user.status || "pending",
           createdBy: user.createdBy,
           assignedAt: user.assignedAt,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         },
       });
     } catch (error) {
