@@ -11,17 +11,6 @@ const routes = require('./src/routes/index');
 
 app.use(express.static(path.join(__dirname)));
 
-// session
-// const session = require("express-session");
-// app.use(
-//   session({
-//     secret: process.env.JWT_KEY_SECRET,
-//     resave: false,
-//     saveUninitialized: false,
-//     cookie: { secure: false },
-//   })
-// );
-
 // cors
 const cors = require("cors");
 app.use(cors({

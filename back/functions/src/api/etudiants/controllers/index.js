@@ -3,6 +3,9 @@ const db = require("../../../config/firebase");
 const AuditLog = require("../../../classes/AuditLog");
 const { sendWebhook } = require("../../../utils/webhookSender");
 const { encrypt, decrypt } = require("../../../utils/encryption");
+const StudentValidator = require("../../../utils/studentValidator");
+const { getCurrentAcademicYear } = require("../../../utils/dateUtils");
+const { applyScholarshipDiscount } = require("../../../utils/scholarshipUtils");
 
 class EtudiantController {
   constructor() {
@@ -37,56 +40,19 @@ class EtudiantController {
         overdueNotificationsMutedUntil,
       } = req.body;
 
-      // Validation des données obligatoires
-      if (!nom || !prenom || !date_naissance || !classe_id || !nationalite) {
+      // Validation des données avec StudentValidator
+      const validation = StudentValidator.validateStudentData({
+        nom,
+        prenom,
+        date_naissance,
+        classe_id,
+        nationalite,
+      });
+
+      if (!validation.isValid) {
         return res.status(400).json({
           status: false,
-          message:
-            "Le nom, prénom, date de naissance, classe et nationalité sont requis",
-        });
-      }
-
-      // Validation du nom
-      if (nom.trim().length < 2) {
-        return res.status(400).json({
-          status: false,
-          message: "Le nom doit contenir au moins 2 caractères",
-        });
-      }
-
-      // Validation du prénom
-      if (prenom.trim().length < 2) {
-        return res.status(400).json({
-          status: false,
-          message: "Le prénom doit contenir au moins 2 caractères",
-        });
-      }
-
-      // Validation de la date de naissance
-      const dateNaissance = new Date(date_naissance);
-      if (isNaN(dateNaissance.getTime())) {
-        return res.status(400).json({
-          status: false,
-          message: "Format de date invalide",
-        });
-      }
-
-      // Calculer l'âge
-      const aujourd = new Date();
-      let age = aujourd.getFullYear() - dateNaissance.getFullYear();
-      const moisDiff = aujourd.getMonth() - dateNaissance.getMonth();
-
-      if (
-        moisDiff < 0 ||
-        (moisDiff === 0 && aujourd.getDate() < dateNaissance.getDate())
-      ) {
-        age--;
-      }
-
-      if (age < 3 || age > 25) {
-        return res.status(400).json({
-          status: false,
-          message: "L'âge doit être entre 3 et 25 ans",
+          message: validation.message,
         });
       }
 
@@ -205,8 +171,7 @@ class EtudiantController {
       let fraisPayment = 0;
       
       // Récupérer les frais globaux pour l'année scolaire actuelle
-      const currentYear = new Date().getFullYear();
-      const academicYear = `${currentYear}-${currentYear + 1}`;
+      const academicYear = getCurrentAcademicYear();
       
       // Récupérer les frais d'inscription (type "Scolarité" avec nom "Frais Inscription")
       const fraisInscriptionSnapshot = await db
@@ -233,33 +198,19 @@ class EtudiantController {
       if (!fraisInscriptionSnapshot.empty) {
         montantInscription = fraisInscriptionSnapshot.docs[0].data().montant || 0;
         fraisPayment += montantInscription;
-        console.log(`Frais d'inscription trouvé: ${montantInscription} MAD`);
-      } else {
-        console.log('Aucun frais d\'inscription trouvé');
       }
       
       if (!fraisScolariteSnapshot.empty) {
         montantScolarite = fraisScolariteSnapshot.docs[0].data().montant || 0;
         fraisPayment += montantScolarite;
-        console.log(`Frais de scolarité trouvé: ${montantScolarite} MAD`);
-      } else {
-        console.log('Aucun frais de scolarité trouvé');
       }
-      
-      console.log(`Total frais_payment calculé: ${fraisPayment} MAD (Inscription: ${montantInscription} + Scolarité: ${montantScolarite})`);
 
       // Appliquer la réduction de bourse si l'étudiant a une bourse
       if (bourse_id && bourse_id.trim() !== "") {
         const bourseDoc = await db.collection("bourses").doc(bourse_id).get();
         if (bourseDoc.exists) {
           const bourseData = bourseDoc.data();
-          if (bourseData.pourcentage_remise) {
-            // Réduction en pourcentage
-            fraisPayment = fraisPayment * (1 - bourseData.pourcentage_remise / 100);
-          } else if (bourseData.montant_remise) {
-            // Réduction en montant fixe
-            fraisPayment = Math.max(0, fraisPayment - bourseData.montant_remise);
-          }
+          fraisPayment = applyScholarshipDiscount(fraisPayment, bourseData);
         }
       }
 
