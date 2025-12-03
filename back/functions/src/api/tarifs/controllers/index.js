@@ -1,6 +1,8 @@
 const Tarif = require("../../../classes/Tarif");
 const db = require("../../../config/firebase");
 const AuditLog = require("../../../classes/AuditLog");
+const { getCurrentAcademicYear } = require("../../../utils/dateUtils");
+const { calculateScholarshipDiscount } = require("../../../utils/scholarshipUtils");
 
 class TarifController {
   constructor() {
@@ -35,7 +37,7 @@ class TarifController {
       }
 
       const etudiantData = etudiantDoc.data();
-      const currentYear = annee_scolaire || new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
+      const currentYear = annee_scolaire || getCurrentAcademicYear();
 
       // Récupérer les tarifs pour l'année scolaire
       const tarifsQuery = this.collection
@@ -70,8 +72,8 @@ class TarifController {
 
         if (bourseDoc.exists) {
           bourseInfo = bourseDoc.data();
-          const tauxBourse = bourseInfo.taux || 0; // Taux en pourcentage (ex: 50 pour 50%)
-          reductionBourse = (fraisTotal * tauxBourse) / 100;
+          const tauxBourse = bourseInfo.taux || 0;
+          reductionBourse = calculateScholarshipDiscount(fraisTotal, tauxBourse);
         }
       }
 

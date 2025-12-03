@@ -6,46 +6,26 @@ const ivLength = 16;
 // Clé d'encryption par défaut sécurisée (32 caractères exactement)
 const DEFAULT_ENCRYPTION_KEY = "a_very_secure_32_byte_secret_key!";
 
-// Récupérer la clé d'environnement ou utiliser la clé par défaut
-let ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY;
-
-// Forcer une clé valide de 32 bytes
-let finalKey = ENCRYPTION_KEY;
-
-// Log pour debug
-console.log(`🔑 Clé d'encryption détectée: ${ENCRYPTION_KEY.substring(0, 10)}... (longueur: ${ENCRYPTION_KEY.length})`);
-
-// S'assurer que la clé fait exactement 32 bytes
-if (finalKey.length !== 32) {
-  console.warn(
-    `⚠️  ENCRYPTION_KEY length: ${finalKey.length} bytes, expected 32 bytes. Using secure default.`
-  );
-  finalKey = DEFAULT_ENCRYPTION_KEY;
-}
-
-// Vérification finale et correction automatique
-if (finalKey.length !== 32) {
-  console.warn(`⚠️  Clé d'encryption de longueur incorrecte: ${finalKey.length} bytes`);
-  
-  // Correction automatique de la clé
-  if (finalKey.length < 32) {
-    // Compléter avec des zéros
-    finalKey = finalKey.padEnd(32, '0');
-    console.log("✅ Clé complétée à 32 bytes");
-  } else if (finalKey.length > 32) {
-    // Tronquer à 32 caractères
-    finalKey = finalKey.substring(0, 32);
-    console.log("✅ Clé tronquée à 32 bytes");
+/**
+ * Normalize encryption key to exactly 32 bytes
+ * @param {string} key - Input key
+ * @returns {string} Normalized 32-byte key
+ */
+const normalizeEncryptionKey = (key) => {
+  if (key.length === 32) {
+    return key;
   }
   
-  // Vérification finale
-  if (finalKey.length !== 32) {
-    console.error("❌ Impossible de corriger la clé d'encryption");
-    throw new Error("Invalid encryption key configuration");
+  if (key.length < 32) {
+    return key.padEnd(32, '0');
   }
-}
+  
+  return key.substring(0, 32);
+};
 
-console.log("✅ Clé d'encryption validée (32 bytes)");
+// Get encryption key from environment or use default
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY;
+const finalKey = normalizeEncryptionKey(ENCRYPTION_KEY);
 
 const encrypt = (text) => {
   if (text === null || text === undefined || text === "") {
